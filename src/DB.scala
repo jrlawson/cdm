@@ -40,6 +40,14 @@ case class TargetObservation(time: Long, lat: Double, lon: Double, standardError
 case class Vessel(name: String, flag: String, displacement: Double)
 
 /**
+ * Ingesters are an important part of what's here. Whenever an element is added
+ * to the KB, its "type" property is inspected. There is a set of ingesters that
+ * are registered with the KB by type. Currently we only support a single string
+ * in the type property, but it would not be hard to support arrays of string.
+ * Associated with certain type strings is a list of functions that operate on 
+ * the newly added node. These do things like add it to indices. 
+ *
+ *
  * Issues: How to make adding to indices less painful. What if, post-deployment,
  * we add an index file? We've addressed that problem somewhat through use of 
  * the things we call "ingesters", which are basically functions that are called
