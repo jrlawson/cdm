@@ -1,3 +1,4 @@
+package com.s3.cdm
 /**
  * @author Jamie Lawson
  * @author Gene Hubbard
@@ -85,6 +86,9 @@ trait TypedEntry extends Entry {
  * amorphous network (say, piracy in the Gulf of Adan; who are the members of 
  * that network and what are their roles?), etc.
  * 
+ * All indices support a match query. That is, if you give a key value, the 
+ * matchQuery method will return all matches in the index. 
+ * 
  * Issues:
  * 1) Indexing a set of entries (rather than just one)
  * 2) Removing an entry
@@ -105,6 +109,21 @@ trait Index {
   def matchQuery(key: Any): Option[TypedEntry]  //  Artificially narrow query result.
   def name: String                              //  What we call the index.
   def description: String                       //  Partial solution to problem of introspecting on indices
+}
+
+/**
+ * An ordered index extends an index to support range queries. That is, entities
+ * between a "low" and "high" value
+ */
+trait OrderedIndex extends Index {
+  def rangeQuery(keyL: Any, keyH: Any)
+}
+
+/**
+ * A proximity index extends an index to support proximity queries
+ */
+trait ProximityIndex extends Index {
+  def proximityQuery(keyTarget: Any, radius: Double)
 }
 
 /**
@@ -224,9 +243,7 @@ class PersonIndex extends Index {
     }
   }  
   
-  def matchQuery(key: Any): Option[TypedEntry] = {
-    elements.get(key.toString) 
-  }
+  def matchQuery(key: Any): Option[TypedEntry] = elements.get(key.toString) 
   
   def description = "Organizes people by last name"
   def name = "People"
