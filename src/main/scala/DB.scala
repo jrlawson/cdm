@@ -1,9 +1,9 @@
 import java.io.File
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.neo4j.graphdb._
 import org.neo4j.graphdb.index._
 
 import org.neo4j.graphdb.factory._
-import org.neo4j.tooling._
 import scala.collection.JavaConverters._
 
 object IsFriendOf extends RelationshipType {
@@ -53,7 +53,7 @@ case class Vessel(name: String, flag: String, displacement: Double)
  * the things we call "ingesters", which are basically functions that are called
  * when an observation node is added to the KB. But it's a bit sloppy.
  */
-object FakeDB {
+object FakeDB extends LazyLogging {
   private val DbLocation = "/tmp/neoDb4j/"
   private val ZuluTime = java.util.TimeZone.getTimeZone("Zulu")
   private val calendar = new java.util.GregorianCalendar(ZuluTime)
@@ -95,9 +95,9 @@ object FakeDB {
       
       ingest(newVessel)
       tx.success
-      println("Added vessel " + vessel.name)
+      logger.info("Added vessel " + vessel.name)
     } catch {
-      case ex: Exception => println("Exception thrown: " + ex.getMessage)
+      case ex: Exception => logger.error("Exception thrown: " + ex.getMessage)
     } finally {
       tx.close
     }
@@ -121,7 +121,7 @@ object FakeDB {
       observation.setProperty("purpose", report.purpose)
       ingest(observation)
       tx.success
-      println("Added AIS report for vessel " + report.vesselName)
+      logger.info("Added AIS report for vessel " + report.vesselName)
     } catch {
       case ex: Exception => println("Exception thrown")
     } finally {
@@ -145,9 +145,9 @@ object FakeDB {
       observation.setProperty("vesselName", report.vesselName)
       ingest(observation)
       tx.success
-      println("Added blue force self-report for vessel " + report.vesselName)
+      logger.info("Added blue force self-report for vessel " + report.vesselName)
     } catch {
-      case ex: Exception => println("Exception thrown")
+      case ex: Exception => logger.error("Exception thrown while adding blue force self-locator")
     } finally {
       tx.close
     }
@@ -167,9 +167,9 @@ object FakeDB {
       observation.setProperty("standardError", report.standardError)
       ingest(observation)
       tx.success
-      println("Added target observation -- Lat:" + report.lat + "  Lon:" + report.lon + "  Time:" + new java.util.Date(report.time))
+      logger.info("Added target observation -- Lat:" + report.lat + "  Lon:" + report.lon + "  Time:" + new java.util.Date(report.time))
     } catch {
-      case ex: Exception => println("Exception thrown")
+      case ex: Exception => logger.error("Exception thrown while adding target observation")
     } finally {
       tx.close
     }
@@ -191,7 +191,7 @@ object FakeDB {
         val txIndices = graphDb.beginTx; try {
           indexManager.forNodes("vessels")
         } catch {
-          case ex: Exception => println("Couldn't create index for 'vessels'")
+          case ex: Exception => logger.error("Couldn't create index for 'vessels'")
           System.exit(1)
           null
         } finally {
@@ -215,17 +215,15 @@ object FakeDB {
     // We get a message from an E-2D Hawkeye.
     addTargetObservation(graphDb, TargetObservation(time(2016,6,8,1,1,36,478), 14.613180, 49.956102, 131.2))   
     
-    println("The neo4j id of the Schoty is: " + schotyID + "  and the id for BunkerHill is: " + bunkerHillID)
+    logger.info("The neo4j id of the Schoty is: " + schotyID + "  and the id for BunkerHill is: " + bunkerHillID)
     
     //  Now let's find the Schoty using the vessel index.
     val tx = graphDb.beginTx; try {
       val index = indexManager.forNodes("vessels")
-      println("--------------------------------------------")
-      index.get("name", "Schoty").iterator.asScala.foreach(vessel => println(vessel.getProperty("flag")))
-      println("--------------------------------------------")      
+      index.get("name", "Schoty").iterator.asScala.foreach(vessel => logger.info("Vessel Schoty with flag: " + vessel.getProperty("flag")))      
       tx.success
     } catch {
-      case ex: Exception => println("Exception finding vessel")
+      case ex: Exception => logger.warn("Exception finding vessel")
     } finally {
       tx.close  
     }
