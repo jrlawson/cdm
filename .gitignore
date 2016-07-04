@@ -1,1 +1,12 @@
-target/
+.classpath
+.project
+.settings
+.cache-main
+target/*
+bin/*
+lib/*
+project/target/*
+*~
+*.bak
+*.BAK
+/bin/
