@@ -1,1 +1,2 @@
 This project is a simulation of the conceptual data model. It requires SBT be installed on the target system.
+The project is written in Scala and uses the Neo4J graph database as an example for persisting data.
