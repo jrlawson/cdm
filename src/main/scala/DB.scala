@@ -6,12 +6,8 @@ import org.neo4j.graphdb.index._
 import org.neo4j.graphdb.factory._
 import scala.collection.JavaConverters._
 
-object IsFriendOf extends RelationshipType {
-  def name: String = "IS_FRIEND_OF"
-}
-
-object HasSeen extends RelationshipType {
-  def name: String = "HAS_SEEN"
+object ObservedBy extends RelationshipType {
+  def name: String = "OBSERVED_BY"
 }
 
 object MOVIE extends Label {
@@ -21,22 +17,23 @@ object USER extends Label {
   def name = "Movie"
 }
 
-trait Locator {
+trait Observation {
   def time: Long
+  def source: Long
+}
+trait Locator extends Observation {
   def lat: Double
   def lon: Double
 }
 trait SelfLocator extends Locator {
-  def time: Long
-  def lat: Double
-  def lon: Double
   def speed: Double
   def heading: Double
   def vesselName: String
 }
-case class AIS(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, flag: String, purpose: String) extends SelfLocator
-case class BlueforceSelfLocator(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String) extends SelfLocator
-case class TargetObservation(time: Long, lat: Double, lon: Double, standardError: Double)
+case class DataSource(name: String)
+case class AIS(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, flag: String, purpose: String, source: Long) extends SelfLocator
+case class BlueforceSelfLocator(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, source: Long) extends SelfLocator
+case class TargetObservation(time: Long, lat: Double, lon: Double, standardError: Double, source: Long) extends Locator
 case class Vessel(name: String, flag: String, displacement: Double)
 
 /**
@@ -82,33 +79,47 @@ object FakeDB extends LazyLogging {
     }   
   }
   
+  /**
+   * Can throw exceptions.
+   */
+  def addDataSource(database: GraphDatabaseService, dataSource: DataSource): Long = {
+    val tx = database.beginTx
+    try {
+      val newSource = database.createNode
+      newSource.setProperty("timestamp", new java.util.Date().getTime)
+      newSource.setProperty("type", "DataSource")
+      newSource.setProperty("name", dataSource.name) 
+      ingest(newSource)
+      tx.success
+      logger.info("Added data source " + dataSource.name)
+      newSource.getId
+    } finally {
+      tx.close
+    }
+  }
+  
   def addVessel(database: GraphDatabaseService, vessel: Vessel): Long = {
-    var id = 0L
-    val tx = database.beginTx; try {
+    val tx = database.beginTx
+    try {
       val newVessel = database.createNode
-      id = newVessel.getId
       newVessel.setProperty("timestamp", new java.util.Date().getTime)
       newVessel.setProperty("type", "Vessel")
       newVessel.setProperty("name", vessel.name)
       newVessel.setProperty("flag", vessel.flag)
-      newVessel.setProperty("displacement", vessel.displacement)
-      
+      newVessel.setProperty("displacement", vessel.displacement) 
       ingest(newVessel)
       tx.success
       logger.info("Added vessel " + vessel.name)
-    } catch {
-      case ex: Exception => logger.error("Exception thrown: " + ex.getMessage)
+      newVessel.getId
     } finally {
       tx.close
     }
-    id
   }
   
   def addAIS(database: GraphDatabaseService, report: AIS): Long = {
-    var id = 0L
-    val tx = database.beginTx; try {
+    val tx = database.beginTx
+    try {
       val observation = database.createNode
-      id = observation.getId
       observation.setProperty("timestamp", new java.util.Date().getTime)
       observation.setProperty("type", "AIS")
       observation.setProperty("time", report.time)
@@ -119,22 +130,24 @@ object FakeDB extends LazyLogging {
       observation.setProperty("vesselName", report.vesselName)
       observation.setProperty("flag", report.flag)
       observation.setProperty("purpose", report.purpose)
+      
+      //  Add the relationship
+      //observation.setProperty("source", "AIS") //  No! not a property, a relation.
+      
       ingest(observation)
       tx.success
       logger.info("Added AIS report for vessel " + report.vesselName)
-    } catch {
-      case ex: Exception => println("Exception thrown")
+      observation.getId
     } finally {
       tx.close
     }
-    id
   }
 
   def addBlueforceSelfLocator(database: GraphDatabaseService, report: BlueforceSelfLocator):Long = {
-    var id = 0L
-    val tx = database.beginTx; try {
+    val tx = database.beginTx
+    try {
       val observation = database.createNode
-      id = observation.getId
+      observation.setProperty("source", report.source)  //  No! not a property, a relation.
       observation.setProperty("timestamp", new java.util.Date().getTime)
       observation.setProperty("type", "AIS")
       observation.setProperty("time", report.time)
@@ -146,19 +159,17 @@ object FakeDB extends LazyLogging {
       ingest(observation)
       tx.success
       logger.info("Added blue force self-report for vessel " + report.vesselName)
-    } catch {
-      case ex: Exception => logger.error("Exception thrown while adding blue force self-locator")
+      observation.getId
     } finally {
       tx.close
     }
-    id
   }
   
   def addTargetObservation(database: GraphDatabaseService, report: TargetObservation): Long = {
-    var id = 0L
-    val tx = database.beginTx; try {
+    val tx = database.beginTx
+    try {
       val observation = database.createNode
-      id = observation.getId
+      observation.setProperty("source", report.source)  //  No! Not a property, a relation.
       observation.setProperty("timestamp", new java.util.Date().getTime)      
       observation.setProperty("type", "TargetObservation")
       observation.setProperty("time", report.time)
@@ -168,12 +179,10 @@ object FakeDB extends LazyLogging {
       ingest(observation)
       tx.success
       logger.info("Added target observation -- Lat:" + report.lat + "  Lon:" + report.lon + "  Time:" + new java.util.Date(report.time))
-    } catch {
-      case ex: Exception => logger.error("Exception thrown while adding target observation")
+      observation.getId
     } finally {
       tx.close
     }
-    id
   }
   
   import scala.collection.JavaConverters._
@@ -181,6 +190,8 @@ object FakeDB extends LazyLogging {
    * This is the main simulation. 
    */
   def main(args: Array[String]): Unit = {
+    val EndedInError = -1
+    
     // For safety, let's make sure to purge any old copies of the database.
     deleteFileOrDirectory(new java.io.File(DbLocation))
     
@@ -188,7 +199,8 @@ object FakeDB extends LazyLogging {
     val graphDb = new GraphDatabaseFactory().newEmbeddedDatabase(new java.io.File(DbLocation))
     val indexManager: IndexManager = graphDb.index
     lazy val vesselIndex: Index[Node] = {
-        val txIndices = graphDb.beginTx; try {
+        val txIndices = graphDb.beginTx
+        try {
           indexManager.forNodes("vessels")
         } catch {
           case ex: Exception => logger.error("Couldn't create index for 'vessels'")
@@ -198,24 +210,104 @@ object FakeDB extends LazyLogging {
           txIndices.close
         }
       }
+    lazy val sourceIndex: Index[Node] = {
+        val txIndices = graphDb.beginTx
+        try {
+          indexManager.forNodes("datasources")
+        } catch {
+          case ex: Exception => logger.error("Couldn't create index for 'sources'")
+          System.exit(1)
+          null
+        } finally {
+          txIndices.close
+        }
+      }
+    
+    // Ingesters
     val fIngestVessel = (node:Node) => indexManager.forNodes("vessels").add(node, "name", node.getProperty("name"))
     ingesters.get("Vessel") match {
         case Some(functions) => ingesters.put("Vessel", fIngestVessel::functions)
         case None            => ingesters.put("Vessel", List(fIngestVessel))     
       }
+    val fIngestDataSource = (node:Node) => indexManager.forNodes("datasources").add(node, "name", node.getProperty("name"))
+    ingesters.get("DataSource") match {
+        case Some(functions) => ingesters.put("DataSource", fIngestDataSource::functions)
+        case None            => ingesters.put("DataSource", List(fIngestDataSource))     
+      }
+    val fRelateAIStoSource = (node:Node) => {              //  Adds relationship between AIS observation
+        val index = indexManager.forNodes("datasources")   //  and the AIS data source.  
+        node.createRelationshipTo(index.get("name", "AIS").getSingle, ObservedBy)
+        ()                                                 //  Returns value of type Unit
+      }
+    ingesters.get("AIS") match {
+        case Some(functions) => ingesters.put("AIS", fRelateAIStoSource::functions)
+        case None            => ingesters.put("AIS", List(fRelateAIStoSource))     
+      }
+ 
     
-    // There are a couple of vessels in the scenario. So add them.
-    val schotyID = addVessel(graphDb, Vessel("Schoty", "Russia", 74))
-    val bunkerHillID = addVessel(graphDb, Vessel("Bunker Hill", "US", 27100))
+    
+    // There are a couple of data sources in the scenario. So add them.
+    try {
+      addDataSource(graphDb, DataSource("Hawkeye"))
+      addDataSource(graphDb, DataSource("AIS"))
+      addDataSource(graphDb, DataSource("Blue Force"))
+    } catch {
+      case ex: Exception => logger.error("Error while adding data source: " + ex.getMessage)
+    }
+    //  Pull the source IDs from the index (for convenience).
+    val aisSourceId: Long = {
+        val tx = graphDb.beginTx; try {
+          val index = indexManager.forNodes("datasources")
+          val id = index.get("name", "AIS").getSingle.getId
+          tx.success
+          id
+        } catch {
+          case ex: Exception => logger.error("Couldn't pull the AIS source from the data sources index" + ex.getMessage)
+          System.exit(1)
+          EndedInError
+        } finally {
+          tx.close
+        }
+      }
+    val hawkeyeId: Long = {
+        val tx = graphDb.beginTx; try {
+          val index = indexManager.forNodes("datasources")
+          val id = index.get("name", "Hawkeye").getSingle.getId
+          tx.success
+          id
+        } catch {
+          case ex: Exception => logger.error("Couldn't pull the Hawkeye source from the data sources index" + ex.getMessage)
+          System.exit(1)
+          EndedInError
+        } finally {
+          tx.close
+        }      
+      }
+    
+    val schotyId = try {
+      addVessel(graphDb, Vessel("Schoty", "Russia", 74))
+    } catch {
+      case ex: Exception => logger.error("Couldn't add Schoty: " + ex.getMessage)
+                            System.exit(0)
+    }
+    val bunkerHillId = try {
+      addVessel(graphDb, Vessel("Bunker Hill", "US", 27100))
+    } catch { 
+      case ex: Exception => logger.error("Couldn't add Bunker Hill: " + ex.getMessage)
+    }
+  
+    ////////////////////////////////////////////////////////////////////////////
+    // Now for the scenario.
+    ////////////////////////////////////////////////////////////////////////////
     
     // We get a couple of AIS messages from the Schoty about a half hour apart
-    addAIS(graphDb, AIS(time(2016,6,8,0,15,21,0), 14.624465, 50.164166, 10.1, 261.0, "Schoty", "Russia", "Fishing"))
-    addAIS(graphDb, AIS(time(2016,6,8,0,45,21,0), 14.605866, 50.018592, 10.2, 260.0, "Schoty", "Russia", "Fishing"))
+    addAIS(graphDb, AIS(time(2016,6,8,0,15,21,0), 14.624465, 50.164166, 10.1, 261.0, "Schoty", "Russia", "Fishing", aisSourceId))
+    addAIS(graphDb, AIS(time(2016,6,8,0,45,21,0), 14.605866, 50.018592, 10.2, 260.0, "Schoty", "Russia", "Fishing", aisSourceId))
     
     // We get a message from an E-2D Hawkeye.
-    addTargetObservation(graphDb, TargetObservation(time(2016,6,8,1,1,36,478), 14.613180, 49.956102, 131.2))   
+    addTargetObservation(graphDb, TargetObservation(time(2016,6,8,1,1,36,478), 14.613180, 49.956102, 131.2, hawkeyeId))   
     
-    logger.info("The neo4j id of the Schoty is: " + schotyID + "  and the id for BunkerHill is: " + bunkerHillID)
+    logger.info("The neo4j id of the Schoty is: " + schotyId + "  and the id for BunkerHill is: " + bunkerHillId)
     
     //  Now let's find the Schoty using the vessel index.
     val tx = graphDb.beginTx; try {
