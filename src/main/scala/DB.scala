@@ -19,7 +19,6 @@ object USER extends Label {
 
 trait Observation {
   def time: Long
-  def source: Long
 }
 trait Locator extends Observation {
   def lat: Double
@@ -31,9 +30,9 @@ trait SelfLocator extends Locator {
   def vesselName: String
 }
 case class DataSource(name: String)
-case class AIS(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, flag: String, purpose: String, source: Long) extends SelfLocator
-case class BlueforceSelfLocator(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, source: Long) extends SelfLocator
-case class TargetObservation(time: Long, lat: Double, lon: Double, standardError: Double, source: Long) extends Locator
+case class AIS(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String, flag: String, purpose: String) extends SelfLocator
+case class BlueforceSelfLocator(time: Long, lat: Double, lon: Double, speed: Double, heading: Double, vesselName: String) extends SelfLocator
+case class TargetObservation(time: Long, lat: Double, lon: Double, standardError: Double, source: String) extends Locator
 case class Vessel(name: String, flag: String, displacement: Double)
 
 /**
@@ -129,11 +128,7 @@ object FakeDB extends LazyLogging {
       observation.setProperty("heading", report.heading)
       observation.setProperty("vesselName", report.vesselName)
       observation.setProperty("flag", report.flag)
-      observation.setProperty("purpose", report.purpose)
-      
-      //  Add the relationship
-      //observation.setProperty("source", "AIS") //  No! not a property, a relation.
-      
+      observation.setProperty("purpose", report.purpose)      
       ingest(observation)
       tx.success
       logger.info("Added AIS report for vessel " + report.vesselName)
@@ -147,9 +142,9 @@ object FakeDB extends LazyLogging {
     val tx = database.beginTx
     try {
       val observation = database.createNode
-      observation.setProperty("source", report.source)  //  No! not a property, a relation.
+      //observation.setProperty("source", report.source)  //  No! not a property, a relation.
       observation.setProperty("timestamp", new java.util.Date().getTime)
-      observation.setProperty("type", "AIS")
+      observation.setProperty("type", "BFR")
       observation.setProperty("time", report.time)
       observation.setProperty("lat", report.lat)
       observation.setProperty("lon", report.lon)
@@ -243,14 +238,32 @@ object FakeDB extends LazyLogging {
         case Some(functions) => ingesters.put("AIS", fRelateAIStoSource::functions)
         case None            => ingesters.put("AIS", List(fRelateAIStoSource))     
       }
- 
+    val fRelateBFRtoSource = (node:Node) => {              //  Adds relationship between blue force observation
+        val index = indexManager.forNodes("datasources")   //  and the AIS data source.  
+        node.createRelationshipTo(index.get("name", "BFR").getSingle, ObservedBy)
+        ()                                                 //  Returns value of type Unit
+      }
+    ingesters.get("BFR") match {
+        case Some(functions) => ingesters.put("BFR", fRelateBFRtoSource::functions)
+        case None            => ingesters.put("BFR", List(fRelateBFRtoSource))     
+      }
+     val fRelateSensorObsToSource = (node:Node) => {       //  Adds relationship between sensor observation
+        val index = indexManager.forNodes("datasources")   //  and the sensor data source.
+        node.createRelationshipTo(index.get("name", node.getProperties("source").get("source")).getSingle, ObservedBy)
+        println("Linked measurement to sensor source")
+        ()                                                 //  Returns value of type Unit
+      }
+    ingesters.get("TargetObservation") match {
+        case Some(functions) => ingesters.put("TargetObservation", fRelateSensorObsToSource::functions)
+        case None            => ingesters.put("TargetObservation", List(fRelateSensorObsToSource))     
+      }
     
     
     // There are a couple of data sources in the scenario. So add them.
     try {
       addDataSource(graphDb, DataSource("Hawkeye"))
       addDataSource(graphDb, DataSource("AIS"))
-      addDataSource(graphDb, DataSource("Blue Force"))
+      addDataSource(graphDb, DataSource("BFR"))
     } catch {
       case ex: Exception => logger.error("Error while adding data source: " + ex.getMessage)
     }
@@ -283,7 +296,9 @@ object FakeDB extends LazyLogging {
           tx.close
         }      
       }
+    println("Hawkeye ID = " + hawkeyeId)
     
+    // Add a couple of vessels to the database
     val schotyId = try {
       addVessel(graphDb, Vessel("Schoty", "Russia", 74))
     } catch {
@@ -301,11 +316,14 @@ object FakeDB extends LazyLogging {
     ////////////////////////////////////////////////////////////////////////////
     
     // We get a couple of AIS messages from the Schoty about a half hour apart
-    addAIS(graphDb, AIS(time(2016,6,8,0,15,21,0), 14.624465, 50.164166, 10.1, 261.0, "Schoty", "Russia", "Fishing", aisSourceId))
-    addAIS(graphDb, AIS(time(2016,6,8,0,45,21,0), 14.605866, 50.018592, 10.2, 260.0, "Schoty", "Russia", "Fishing", aisSourceId))
+    addAIS(graphDb, AIS(time(2016,6,8,0,15,21,0), 14.624465, 50.164166, 10.1, 261.0, "Schoty", "Russia", "Fishing"))
+    addAIS(graphDb, AIS(time(2016,6,8,0,45,21,0), 14.605866, 50.018592, 10.2, 260.0, "Schoty", "Russia", "Fishing"))
+    
+    // We get a blue force self-location report from the Bunker Hill
+    addBlueforceSelfLocator(graphDb, BlueforceSelfLocator(time(2016,6,8,1,9,34,0), 14.610000, 50.070000, 6.4, 87.0, "Bunker Hill"))
     
     // We get a message from an E-2D Hawkeye.
-    addTargetObservation(graphDb, TargetObservation(time(2016,6,8,1,1,36,478), 14.613180, 49.956102, 131.2, hawkeyeId))   
+    addTargetObservation(graphDb, TargetObservation(time(2016,6,8,1,1,36,478), 14.613180, 49.956102, 131.2, "Hawkeye"))   
     
     logger.info("The neo4j id of the Schoty is: " + schotyId + "  and the id for BunkerHill is: " + bunkerHillId)
     
