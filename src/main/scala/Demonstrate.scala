@@ -6,6 +6,10 @@
 import java.util.UUID
 import com.s3.cdm._
 
+
+/**
+ * Old very high level demo. Deprecated.
+ */
 object ConceptualDataModel extends App {
   val myID = UUID.randomUUID
   
