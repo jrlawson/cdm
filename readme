@@ -1,2 +1,119 @@
-This project is a simulation of the conceptual data model. It requires SBT be installed on the target system.
-The project is written in Scala and uses the Neo4J graph database as an example for persisting data.
+This project is a simulation of the conceptual data model. It requires SBT be 
+installed on the target system. The project is written in Scala and uses the 
+Neo4J graph database as an example for persisting data. 
+
+
+
+GETTING SET UP:
+The build tool for this project is SBT. The only things you should need to do 
+some work with this project are git to clone the repository (which, if you 
+are reading this, you have already done) and SBT to work with the project (and
+a network connection to the Internet). On Linux or MacOSX you can tell if SBT 
+is already installed with the command:
+
+     which sbt
+
+On Windows, you should be able to use 
+
+     where sbt*
+     
+to find out whether SBT is installed. If it is not installed, you can obtain
+an installer from the SBT web site:
+
+     http://www.scala-sbt.org/
+     
+Installation instructions are here:
+
+     http://www.scala-sbt.org/download.html
+
+     
+
+GETTING STARTED:
+The build.sbt file that defines this project uses "managed dependencies" to
+make things work. In short, what this means is that SBT will download the
+right versions of the right libraries and put them in the right place so that
+you don't have to worry about it. 
+
+To get stated launch SBT from the root directory of your project. So if you
+git cloned the project into the directory ~myhome/work, the root directory
+of your project is ~myhome/work/cdm. That's also where the build file build.sbt
+is located. In the project root directory, at a command line, type
+
+     sbt
+     
+to start sbt. The first time you launch SBT, this might take some time because
+SBT ingests the build file and downloads all of the libraries to satisfy 
+managed dependencies. If the right libraries are present, and in the places
+SBT expects them to be, SBT starts up without all that ruckus.
+
+When SBT is ready, it will let you know with the simple "greater than" prompt.
+
+     >
+     
+That's where you can enter your commands. For instance the command
+
+     help
+     
+gives a list of SBT commands. The obvious "commands" such as clean, compile, 
+test, and run are missing from the list. That's because they are project 
+"tasks" rather than commands. But tasks is one of the commands listed in the
+results of help. So if, at the SBT prompt, you type 
+
+     tasks
+     
+you get a list of all kinds of tasks including all of those above as well as
+publish, doc, update, etc. So how are tasks different from commands? That's a
+revealing question. Tasks have dependencies. These are conceptually similar
+to the library dependencies, but they work on tasks instead. Take the run task
+as an example. If the run task depends on the compile task, then if you issue 
+the run task at the SBT prompt, it will automatically execute the compile task
+first. In the case for our project, the job of the run task is to run the 
+simulation on a demonstration thread. The Scala object associated with that
+demonstration thread is called Demo. So executing the 
+
+     run 
+      
+command from the SBT prompt should give a set of logger messages that look 
+something like these:
+
+     11:19:48.391 [run-main-0] INFO  DB$ - Graph database main storage file deleted at /tmp/neoDb4j/
+     11:19:49.572 [run-main-0] INFO  DB$ - Graph database main storage file opened at /tmp/neoDb4j/
+     ...
+     11:19:50.060 [run-main-0] INFO  DB$ - Added target observation -- Lat:14.61318  Lon:49.956102  Time:Thu Jul 07 18:01:36 PDT 2016
+     11:19:50.070 [run-main-0] INFO  Demo$ - The KDB id of the Schoty is: 3  and the id for BunkerHill is: 4
+     11:19:50.077 [run-main-0] INFO  Demo$ - Vessel Schoty with flag: Russia
+     [success] Total time: 4 s, completed Jul 7, 2016 11:19:50 AM
+
+That's the demo! 
+
+When you are done with SBT commands, you can enter
+
+     exit
+   
+at the SBT prompt and SBT will revert to the operating system prompt.
+
+
+     
+INTEGRATING THE PROJECT WITH ECLIPSE:
+If you want to integrate this project with the Eclipse IDE, SBT is your best
+friend. At the SBT prompt, you can run the command
+
+     eclipse
+     
+And SBT will generate an Eclipse project file. If you then open Eclipse and
+execute, from the menu, 
+
+     File -> Import...-> Existing projects into workspace
+     
+pointing to your project's root directory, you will have an Eclipse project 
+that works just like other Eclipse projects that you have built up from within
+Eclipse.
+
+One warning on that point, however, is that the Eclipse project will only make 
+sense to Eclipse if you have the Scala-IDE-for-Eclipse installed within your 
+Eclipse installation. The Scala-IDE-for-Eclipse is well beyond the scope of 
+this readme file, but more can be found, including installation instructions, 
+at their web site:
+
+     http://scala-ide.org/
+     
